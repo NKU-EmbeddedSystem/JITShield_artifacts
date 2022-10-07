@@ -1,0 +1,733 @@
+diff --git a/PerformanceTests/.gitignore b/PerformanceTests/.gitignore
+new file mode 100644
+index 000000000000..824b48340106
+--- /dev/null
++++ b/PerformanceTests/.gitignore
+@@ -0,0 +1,5 @@
++*.txt
++*.tar.gz
++.vscode
++*.pdf
++*.csv
+diff --git a/PerformanceTests/JetStream2/RAMification.py b/PerformanceTests/JetStream2/RAMification.py
+index f2838863f866..5604b3d5cee1 100644
+--- a/PerformanceTests/JetStream2/RAMification.py
++++ b/PerformanceTests/JetStream2/RAMification.py
+@@ -196,21 +196,24 @@ class LocalRunner(BaseRunner):
+             args.extend(extraOptions)
+ 
+         if useJetStream2Harness:
+-            args.extend(["-e", "testList='{test}'; runMode='RAMification'".format(test=test), "cli.js"])
++            args.extend(["-e", "testList=\"{test}\";".format(test=test), "cli.js"])
+         else:
+             args.extend(["--footprint", "{test}".format(test=test)])
+-
++        
++        print(args)
+         self.resetForTest(test)
+ 
+         proc = subprocess.Popen(args, cwd=self.rootDir, env=self.environmentVars, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=None, shell=False)
+         while True:
+             line = proc.stdout.readline()
++            print(line)
+             if sys.version_info[0] >= 3:
+                 line = str(line, "utf-8")
+ 
+             self.processLine(line)
+ 
+             if "js shell waiting for input to exit" in line:
++                print('AAAA')
+                 self.vmmapOutput = subprocess.Popen(['vmmap', '--summary', '{}'.format(proc.pid)], shell=False, stderr=subprocess.PIPE, stdout=subprocess.PIPE).stdout.read()
+                 if sys.version_info[0] >= 3:
+                     self.vmmapOutput = str(self.vmmapOutput, "utf-8")
+diff --git a/PerformanceTests/JetStream2/add.py b/PerformanceTests/JetStream2/add.py
+new file mode 100644
+index 000000000000..857e8bab06c2
+--- /dev/null
++++ b/PerformanceTests/JetStream2/add.py
+@@ -0,0 +1,15 @@
++#!/usr/bin/env python
++# coding=utf-8
++
++import sys
++
++file = sys.argv[1]
++f = open(file)
++lines = f.readlines()
++total = 0
++for line in lines:
++    tmp = line.strip().split(':')
++    if len(tmp) > 1:
++        total += int(tmp[1])
++
++print(total)
+diff --git a/PerformanceTests/JetStream2/jetdriver-fix.py b/PerformanceTests/JetStream2/jetdriver-fix.py
+new file mode 100644
+index 000000000000..a196c509a570
+--- /dev/null
++++ b/PerformanceTests/JetStream2/jetdriver-fix.py
+@@ -0,0 +1,28 @@
++#!/usr/bin/env python
++# coding=utf-8
++import subprocess
++import os
++import sys
++jitTests = ["FlightPlanner"]
++
++
++if __name__ == '__main__':
++    baseline, random, restricted = sys.argv[1], sys.argv[2], sys.argv[3]
++    iterations = 100
++    # for i in range(iterations):
++    #     os.makedirs(f'baseline/{i}', exist_ok=True)
++    #     for test in jitTests:
++    #         command = f'{baseline} -e \"testList=\'{test}\';\" cli.js > baseline/{i}/{test}.txt'
++    #         os.system(command)
++    # for i in range(iterations):
++    #     os.makedirs(f'random/{i}', exist_ok=True)
++    #     for test in jitTests:
++    #         command = f'{random} -e \"testList=\'{test}\';\" cli.js > random/{i}/{test}.txt'
++    #         os.system(command)
++
++    for i in range(iterations):
++        os.makedirs(f'restricted/{i}', exist_ok=True)
++        for test in jitTests:
++            command = f'{restricted} -e \"testList=\'{test}\';\" cli.js > restricted/{i}/{test}.txt'
++            os.system(command)
++
+diff --git a/PerformanceTests/JetStream2/jetdriver-spill.py b/PerformanceTests/JetStream2/jetdriver-spill.py
+new file mode 100644
+index 000000000000..0753b4b597f0
+--- /dev/null
++++ b/PerformanceTests/JetStream2/jetdriver-spill.py
+@@ -0,0 +1,13 @@
++#!/usr/bin/env python
++# coding=utf-8
++import subprocess
++import os
++import sys
++jitTests = ["3d-cube-SP", "3d-raytrace-SP", "acorn-wtb", "ai-astar", "Air", "async-fs", "Babylon", "babylon-wtb", "base64-SP", "Basic", "Box2D", "cdjs", "chai-wtb", "coffeescript-wtb", "crypto", "crypto-aes-SP", "crypto-md5-SP", "crypto-sha1-SP", "date-format-tofte-SP", "date-format-xparb-SP", "delta-blue", "earley-boyer", "espree-wtb", "first-inspector-code-load", "FlightPlanner", "float-mm.c", "gaussian-blur", "gbemu", "hash-map", "jshint-wtb", "json-parse-inspector", "json-stringify-inspector", "lebab-wtb", "mandreel", "ML", "multi-inspector-code-load", "n-body-SP", "navier-stokes", "octane-code-load", "octane-zlib", "OfflineAssembler", "pdfjs", "prepack-wtb", "raytrace", "regex-dna-SP", "regexp", "richards", "splay", "stanford-crypto-aes", "stanford-crypto-pbkdf2", "stanford-crypto-sha256", "string-unpack-code-SP", "tagcloud-SP", "typescript", "uglify-js-wtb", "UniPoker", "WSL"]
++
++
++if __name__ == '__main__':
++    solution = sys.argv[1]
++    for test in jitTests:
++        command = f'{solution} -e \"testList=\'{test}\';\" cli.js > /dev/null'
++        os.system(command)
+diff --git a/PerformanceTests/JetStream2/jetdriver.py b/PerformanceTests/JetStream2/jetdriver.py
+new file mode 100644
+index 000000000000..323a86b06dee
+--- /dev/null
++++ b/PerformanceTests/JetStream2/jetdriver.py
+@@ -0,0 +1,23 @@
++#!/usr/bin/env python
++# coding=utf-8
++import subprocess
++import os
++import sys
++jitTests = ["3d-cube-SP", "3d-raytrace-SP", "acorn-wtb", "ai-astar", "Air", "async-fs", "Babylon", "babylon-wtb", "base64-SP", "Basic", "Box2D", "cdjs", "chai-wtb", "coffeescript-wtb", "crypto", "crypto-aes-SP", "crypto-md5-SP", "crypto-sha1-SP", "date-format-tofte-SP", "date-format-xparb-SP", "delta-blue", "earley-boyer", "espree-wtb", "first-inspector-code-load", "FlightPlanner", "float-mm.c", "gaussian-blur", "gbemu", "hash-map", "jshint-wtb", "json-parse-inspector", "json-stringify-inspector", "lebab-wtb", "mandreel", "ML", "multi-inspector-code-load", "n-body-SP", "navier-stokes", "octane-code-load", "octane-zlib", "OfflineAssembler", "pdfjs", "prepack-wtb", "raytrace", "regex-dna-SP", "regexp", "richards", "splay", "stanford-crypto-aes", "stanford-crypto-pbkdf2", "stanford-crypto-sha256", "string-unpack-code-SP", "tagcloud-SP", "typescript", "uglify-js-wtb", "UniPoker", "WSL"]
++
++
++if __name__ == '__main__':
++    baseline, restricted = sys.argv[1], sys.argv[2]
++    iterations = 100
++    for i in range(iterations):
++        os.makedirs(f'baseline/{i}', exist_ok=True)
++        for test in jitTests:
++            command = f'{baseline} -e \"testList=\'{test}\';\" cli.js > baseline/{i}/{test}.txt'
++            os.system(command)
++
++    for i in range(iterations):
++        os.makedirs(f'restricted/{i}', exist_ok=True)
++        for test in jitTests:
++            command = f'{restricted} -e \"testList=\'{test}\';\" cli.js > restricted/{i}/{test}.txt'
++            os.system(command)
++
+diff --git a/PerformanceTests/JetStream2/jetdriver.py.bak b/PerformanceTests/JetStream2/jetdriver.py.bak
+new file mode 100644
+index 000000000000..4d2a7ab9876b
+--- /dev/null
++++ b/PerformanceTests/JetStream2/jetdriver.py.bak
+@@ -0,0 +1,16 @@
++#!/usr/bin/env python
++# coding=utf-8
++import subprocess
++import os
++import sys
++jitTests = ["3d-cube-SP", "3d-raytrace-SP", "acorn-wtb", "ai-astar", "Air", "async-fs", "Babylon", "babylon-wtb", "base64-SP", "Basic", "Box2D", "cdjs", "chai-wtb", "coffeescript-wtb", "crypto", "crypto-aes-SP", "crypto-md5-SP", "crypto-sha1-SP", "date-format-tofte-SP", "date-format-xparb-SP", "delta-blue", "earley-boyer", "espree-wtb", "first-inspector-code-load", "FlightPlanner", "float-mm.c", "gaussian-blur", "gbemu", "gcc-loops-wasm", "hash-map", "HashSet-wasm", "jshint-wtb", "json-parse-inspector", "json-stringify-inspector", "lebab-wtb", "mandreel", "ML", "multi-inspector-code-load", "n-body-SP", "navier-stokes", "octane-code-load", "octane-zlib", "OfflineAssembler", "pdfjs", "prepack-wtb", "quicksort-wasm", "raytrace", "regex-dna-SP", "regexp", "richards", "richards-wasm", "splay", "stanford-crypto-aes", "stanford-crypto-pbkdf2", "stanford-crypto-sha256", "string-unpack-code-SP", "tagcloud-SP", "tsf-wasm", "typescript", "uglify-js-wtb", "UniPoker", "WSL"]
++
++
++if __name__ == '__main__':
++    d8_path = sys.argv[1]
++    os.mkdir('origin')
++    for i in range(100):
++        os.mkdir(f'origin/{i}')
++        for test in jitTests:
++            command = f'{d8_path} -e \"testList=\'{test}\';\" cli.js > origin/{i}/{test}.txt'
++            os.system(command)
+diff --git a/PerformanceTests/JetStream2/norm_score.py b/PerformanceTests/JetStream2/norm_score.py
+new file mode 100644
+index 000000000000..8cdb13c7862f
+--- /dev/null
++++ b/PerformanceTests/JetStream2/norm_score.py
+@@ -0,0 +1,82 @@
++import matplotlib.pyplot as plt
++import pandas as pd
++import numpy as np
++import math
++from matplotlib.pyplot import MultipleLocator
++import matplotlib.ticker as ticker
++
++f = 'time.csv'
++r = 'prof.csv'
++
++x=[]
++random=[]
++origin=[]
++restricted=[]
++df=pd.read_csv(f)
++x=df["benchmark"]
++random=df["random"]
++origin=df["baseline"]
++restricted=df["restrict"]
++overheadrandom=df["normalized random"]
++overheadres=df["normalized restricted"]
++ind = np.arange(len(x))
++ind[len(x)-1]=len(x)+1
++# fig = plt.figure(figsize=(10,10))
++fig = plt.figure(figsize=(15,10))
++ax1=fig.add_subplot(211)
++plt.title("JetStream2 overall execution time")
++
++ax1.spines["top"].set_position(('data',1))
++ax1.spines["right"].set_visible(False)
++ax1.yaxis.set_major_locator(ticker.MultipleLocator(0.01))
++ax1.yaxis.set_minor_locator(ticker.MultipleLocator(0.001))
++
++plt.ylabel("normalized time",fontsize=15)
++random=np.array(random)
++origin=np.array(origin)
++restricted=np.array(restricted)
++resrandom= random / origin
++resrandom=np.round(resrandom,4)
++resrestrict=restricted / origin
++resrestrict=np.round(resrestrict,4)
++temp = np.min(resrandom)
++#print("min: "+str(temp))
++#temp2 = np.max(resrandom)
++#print("max: "+str(temp2))
++#resrandom[np.argmax(resrandom)]=0
++ymax=np.max(np.hstack((resrandom,resrestrict)))
++#resrandom[resrandom==0]=np.max(resrandom)+0.01
++#resrandom[np.argmin(resrandom)]=10
++ymin=np.min(np.hstack((resrandom,resrestrict)))
++plt.ylim(ymin-0.01,ymax+0.01)
++ax1.spines["bottom"].set_position(('data',np.min(np.hstack((resrandom,resrestrict)))-0.01))
++plt.xticks(ind, x,ha='left',fontsize=13,rotation=-47)
++resrandom[resrandom==10]=np.min(np.hstack((resrandom,resrestrict)))-0.01
++
++#plt.barh(ind, overhead, alpha=0.8, color='#36648B', lw=1)
++plt.bar(ind, resrandom, alpha=0.8, color="#696969",width=0.4)
++res1=np.copy(resrandom)
++res2=np.copy(resrandom)
++res1[res1>1]=0
++res2[res2<1]=0
++plt.bar(ind, res1,alpha=0.8, color='#F1A873',width=0.4)
++plt.bar(ind, res2,alpha=0.8, color='#A5DAEB',width=0.4)
++res1[res1<1]=0
++plt.bar(ind, res1,alpha=0.8, color="#DDE6AC",width=0.4)
++plt.text(ind[len(x)-1],resrandom[-1]+0.002,np.round((random[-1]/origin[-1]), 4),ha='center')
++
++ind2 = [i + 0.4 for i in ind]
++plt.bar(ind2, resrestrict, alpha=0.8, color="#696969",width=0.4)
++res1=np.copy(resrestrict)
++res2=np.copy(resrestrict)
++res1[res1>1]=0
++res2[res2<1]=0
++plt.bar(ind2, res1,alpha=0.8, color='#F1A873',width=0.4)
++plt.bar(ind2, res2,alpha=0.8, color='#A5DAEB',width=0.4)
++res1[res1<1]=0
++plt.bar(ind2, res1,alpha=0.8, color="#DDE6AC",width=0.4)
++plt.text(ind2[len(x)-1],resrestrict[-1]+0.005,np.round((restricted[-1]/origin[-1]), 4),ha='center')
++plt.tight_layout()
++plt.savefig("./JetStream.pdf", format="pdf")
++plt.show()
++
+diff --git a/PerformanceTests/JetStream2/norm_value_v.py b/PerformanceTests/JetStream2/norm_value_v.py
+new file mode 100644
+index 000000000000..b26317e97ae1
+--- /dev/null
++++ b/PerformanceTests/JetStream2/norm_value_v.py
+@@ -0,0 +1,142 @@
++import matplotlib.pyplot as plt
++import pandas as pd
++import numpy as np
++import math
++from matplotlib.pyplot import MultipleLocator
++import matplotlib.ticker as ticker
++
++f = 'res.csv'
++df=pd.read_csv(f)
++x=df["benchmark"]
++random=df["random"]
++origin=df["baseline"]
++restricted=df["restrict"]
++overheadrandom=df["normalized random"]
++overheadres=df["normalized restricted"]
++ind = np.arange(len(x))
++ind[len(x)-1]=len(x)+1
++# fig = plt.figure(figsize=(10,10))
++fig = plt.figure(figsize=(14,8))
++ax1=fig.add_subplot(211)
++plt.title("JetStream2 normalized execution time",fontsize=15)
++
++ax1.spines["top"].set_position(('data',1))
++ax1.spines["right"].set_visible(False)
++ax1.yaxis.set_major_locator(ticker.MultipleLocator(0.01))
++ax1.yaxis.set_minor_locator(ticker.MultipleLocator(0.001))
++
++plt.ylabel("normalized time",fontsize=15)
++random=np.array(random)
++origin=np.array(origin)
++restricted=np.array(restricted)
++resrandom= random / origin
++resrandom=np.round(resrandom,4)
++resrestrict=restricted / origin
++resrestrict=np.round(resrestrict,4)
++
++#temp = np.min(resrandom)
++#print("min: "+str(temp))
++temp = np.max(resrandom)
++temp2 = np.max(resrestrict)
++print("random: "+str(temp)+'benchmark: '+x[np.argmax(resrandom)])
++print("resrestrict: "+str(temp2)+'benchmark: '+x[np.argmax(resrestrict)])
++resrandom[np.argmax(resrandom)]=0
++resrestrict[np.argmax(resrestrict)]=0
++temp = np.max(resrandom)
++temp2 = np.max(resrestrict)
++print("random: "+str(temp)+'benchmark: '+x[np.argmax(resrandom)])
++print("resrestrict: "+str(temp2)+'benchmark: '+x[np.argmax(resrestrict)])
++resrandom[np.argmax(resrandom)]=0
++resrestrict[np.argmax(resrestrict)]=0
++temp = np.max(resrandom)
++print("random: "+str(temp)+'benchmark: '+x[np.argmax(resrandom)])
++resrandom[np.argmax(resrandom)]=0
++
++ymax=np.max(np.hstack((resrandom,resrestrict)))
++resrandom[resrandom==0]=ymax+0.01
++resrestrict[resrestrict==0]=ymax+0.01
++extra_random = resrandom[resrandom > 1.04]
++extra_restricted = resrestrict[resrestrict > 1.04]
++print(extra_random)
++print(extra_restricted)
++resrandom[resrandom > 1.04] = 1.04
++resrestrict[resrestrict > 1.04] = 1.04
++#resrandom[np.argmin(resrandom)]=10
++ymin=np.min(np.hstack((resrandom,resrestrict)))
++plt.ylim(ymin-0.01,ymax+0.01)
++ax1.spines["bottom"].set_position(('data',np.min(np.hstack((resrandom,resrestrict)))-0.01))
++plt.xticks(ind, x,ha='left',fontsize=11,rotation=-47)
++#resrandom[resrandom==10]=np.min(np.hstack((resrandom,resrestrict)))-0.01
++
++#plt.barh(ind, overhead, alpha=0.8, color='#36648B', lw=1)
++
++ind2 = [i + 0.4 for i in ind]
++plt.bar(ind2, resrestrict, alpha=0.8, color="#A5DAEB",width=0.4, label='JITShield')
++plt.text(ind2[len(x)-1],resrestrict[-1]+0.008,np.round((restricted[-1]/origin[-1]), 4),ha='center')
++plt.bar(ind, resrandom, alpha=0.8, color="#F1A873",width=0.4, label='random')
++plt.text(ind[len(x)-1],resrandom[-1]+0.002,np.round((random[-1]/origin[-1]), 4),ha='center')
++plt.legend(prop = {'size':11})
++ax1.get_xticklabels()[-1].set_color("crimson")
++ax1.get_xticklabels()[-1].set_fontweight("bold")
++
++ax2=fig.add_subplot(212)
++plt.title("JetStream2 normalized score",fontsize=15)
++#x_major_locator=MultipleLocator(10)
++#ax.xaxis.set_major_locator(x_major_locator)
++# print(ind)
++
++ax2.spines["top"].set_position(('data',1))
++ax2.spines["right"].set_visible(False)
++ax2.yaxis.set_major_locator(ticker.MultipleLocator(0.01))
++ax2.yaxis.set_minor_locator(ticker.MultipleLocator(0.001))
++f = 'score.csv'
++df=pd.read_csv(f)
++x=df["benchmark"]
++random=df["random"]
++origin=df["baseline"]
++restricted=df["restrict"]
++overheadrandom=df["normalized random"]
++overheadres=df["normalized restricted"]
++
++print('---------------------------------------')
++plt.ylabel("normalized score",fontsize=15)
++random=np.array(random)
++origin=np.array(origin)
++resrandom=np.array(overheadrandom)
++resrandom=np.round(resrandom,4)
++resrestrict=np.array(overheadres)
++resrestrict=np.round(resrestrict,4)
++ymax=np.max(np.hstack((resrandom,resrestrict)))
++temp = np.min(resrestrict)
++print("resrestrict: "+str(temp)+'   benchamrk: '+x[np.argmin(resrestrict)])
++resrestrict[np.argmin(resrestrict)]=10
++temp2 = np.min(resrestrict)
++print("resrestrict: "+str(temp2)+'   benchmark: '+x[np.argmin(resrestrict)])
++resrestrict[np.argmin(resrestrict)]=10
++temp3 = np.min(resrandom)
++print("resrandom: "+str(temp3)+'   benchmark: '+x[np.argmin(resrandom)])
++resrandom[np.argmin(resrandom)]=10
++temp4 = np.min(resrestrict)
++print("resrestrict: "+str(temp4)+'   benchmark: '+x[np.argmin(resrestrict)])
++resrestrict[np.argmin(resrestrict)]=10
++
++ymin=np.min(np.hstack((resrandom,resrestrict)))
++resrestrict[resrestrict==10]=ymin-0.01
++resrandom[resrandom==10]=ymin-0.01
++plt.ylim(ymin-0.01, ymax+0.01)
++ax2.spines["bottom"].set_position(('data',ymin-0.01))
++plt.xticks(ind, x,ha='left',fontsize=11,rotation=-47)
++
++
++plt.bar(ind2, resrestrict, alpha=0.8, color="#A5DAEB",width=0.4, label='JITShield')
++plt.text(ind2[len(x)-1],resrestrict[-1]+0.003,np.round(resrestrict[-1], 4),ha='center')
++plt.bar(ind, resrandom, alpha=0.8, color="#F1A873",width=0.4, label='random')
++plt.text(ind[len(x)-1],resrandom[-1]+0.009,np.round(resrandom[-1], 4),ha='center')
++plt.legend(prop = {'size':11})
++ax2.get_xticklabels()[-1].set_color("crimson")
++ax2.get_xticklabels()[-1].set_fontweight("bold")
++#
++plt.tight_layout()
++plt.savefig("./JetStream.pdf", format="pdf")
++plt.show()
++
+diff --git a/PerformanceTests/JetStream2/process-errors.py b/PerformanceTests/JetStream2/process-errors.py
+new file mode 100644
+index 000000000000..8ba468cb6799
+--- /dev/null
++++ b/PerformanceTests/JetStream2/process-errors.py
+@@ -0,0 +1,32 @@
++import math
++def geomean(values):
++    if not len(values):
++        return None
++
++    product = 1.0
++
++    for x in values:
++        product *= x
++
++    return math.pow(product, (1.0 / len(values)))
++
++f = open('errors.txt')
++
++lines = f.readlines()
++solution = 'baseline'
++errors = []
++for line in lines:
++    if line.find('random') != -1:
++        solution = 'random'
++        continue
++    if line.find('restricted') != -1:
++        solution = 'restricted'
++        continue
++    
++    tmp = line.split(' ')
++    if len(tmp) > 1:
++        errors.append(float(tmp[1]))
++        if float(tmp[1]) > 0.05:
++            print(solution, line)
++
++print(geomean(errors))
+diff --git a/PerformanceTests/JetStream2/process-score.py b/PerformanceTests/JetStream2/process-score.py
+new file mode 100644
+index 000000000000..0ff350b655a7
+--- /dev/null
++++ b/PerformanceTests/JetStream2/process-score.py
+@@ -0,0 +1,153 @@
++import re
++import math
++
++start_re = '    Startup: (\d+(?:.\d+)?)'
++worst_re = '    Worst Case: (\d+(?:.\d+)?)'
++avg_re = '    Average: (\d+(?:.\d+)?)'
++time_re = '    Wall time: (\d+(?:.\d+)?\.\d+)' 
++score_re = '    Score: (\d+(?:.\d+)?)'
++
++jitTests = ["3d-cube-SP", "3d-raytrace-SP", "acorn-wtb", "ai-astar", "Air", "async-fs", "Babylon", "babylon-wtb", "base64-SP", "Basic", "Box2D", "cdjs", "chai-wtb", "coffeescript-wtb", "crypto", "crypto-aes-SP", "crypto-md5-SP", "crypto-sha1-SP", "date-format-tofte-SP", "date-format-xparb-SP", "delta-blue", "earley-boyer", "espree-wtb", "first-inspector-code-load", "FlightPlanner", "float-mm.c", "gaussian-blur", "gbemu", "hash-map", "jshint-wtb", "json-parse-inspector", "json-stringify-inspector", "lebab-wtb", "mandreel", "ML", "multi-inspector-code-load", "n-body-SP", "navier-stokes", "octane-code-load", "octane-zlib", "OfflineAssembler", "pdfjs", "prepack-wtb", "raytrace", "regex-dna-SP", "regexp", "richards", "splay", "stanford-crypto-aes", "stanford-crypto-pbkdf2", "stanford-crypto-sha256", "string-unpack-code-SP", "tagcloud-SP", "typescript", "uglify-js-wtb", "UniPoker"]
++
++def geomean(values):
++    if not len(values):
++        return None
++
++    product = 1.0
++
++    for x in values:
++        product *= x
++
++    return math.pow(product, (1.0 / len(values)))
++
++def mean(values):
++    if not len(values):
++        return None;
++
++    res = 0.0
++    for val in values:
++        res += val
++
++    return res / len(values)
++
++def variance(values, average):
++    if not len(values):
++        return None;
++
++    res = 0.0
++    for val in values:
++        res += (val - average) * (val - average)
++
++    return res / (len(values) - 1)
++
++def revision_data(values, variance, average):
++    if not len(values):
++        return None
++    
++    res = []
++    std_v = math.sqrt(variance)
++    for val in values:
++        if abs(val - average) < 3 * std_v:
++            res.append(val)
++    
++    return res
++
++def process(file):
++    f = open(file)
++    startup, worst, avg, score, tt = 0.0, 0.0, 0.0, 0.0, 0.0
++    for line in f:
++        re_match = re.match(start_re, line)
++        if re_match:
++            startup = float(re_match.group(1))
++        
++        re_match = re.match(worst_re, line)
++        if re_match:
++            worst = float(re_match.group(1))
++
++        re_match = re.match(avg_re, line)
++        if re_match:
++            avg = float(re_match.group(1))
++
++        re_match = re.match(score_re, line)
++        if re_match:
++            score = float(re_match.group(1))
++
++        re_match = re.match(time_re, line)
++        if re_match:
++            tt = float(re_match.group(1)[2:]) + float(re_match.group(1)[:1]) * 60
++            break
++
++    f.close()
++
++    return startup, worst, avg, score, tt
++
++
++if __name__ == '__main__':
++    baselines = []
++    for test in jitTests:
++        avgs = []
++        for i in range(20, 100):
++            result = process(f"baseline/{i}/{test}.txt")
++            #avgs.append(result[0])
++            avgs.append(result[-2])
++        avg = mean(avgs)
++        error = variance(avgs, avg)
++        # while revision_data(avgs, error, avg) != avgs:
++        #     avgs = revision_data(avgs, error, avg)
++        #     avg = mean(avgs)
++        #     error = variance(avgs, avg)
++        baselines.append(mean((avgs)))
++    
++    randoms = []
++    for test in jitTests:                            
++        avgs = []                                        
++        for i in range(20, 100):                                  
++            result = process(f"random/{i}/{test}.txt") 
++            #avgs.append(result[0])                       
++            avgs.append(result[-2])                       
++        avg = mean(avgs)
++        error = variance(avgs, avg)
++        # while revision_data(avgs, error, avg) != avgs:
++        #     avgs = revision_data(avgs, error, avg)
++        #     avg = mean(avgs)
++        #     error = variance(avgs, avg)
++        randoms.append(mean(avgs))
++
++    restricteds = []
++    for test in jitTests:                            
++        avgs = []                                        
++        for i in range(20, 100):                                  
++            result = process(f"restricted/{i}/{test}.txt") 
++            #avgs.append(result[0])                       
++            avgs.append(result[-2])                       
++        avg = mean(avgs)
++        error = variance(avgs, avg)
++        # while revision_data(avgs, error, avg) != avgs:
++        #     avgs = revision_data(avgs, error, avg)
++        #     avg = mean(avgs)
++        #     error = variance(avgs, avg)
++        restricteds.append(mean(avgs))
++
++    f = open('score.csv', 'w')
++    random_nors = []
++    res_nors = []
++    f.write(f'benchmark,baseline,random,restrict,normalized random,normalized restricted\n')
++    a = 1.0
++    b = 1.0
++    for i, test in enumerate(jitTests):
++        baseline = baselines[i]
++        random = randoms[i]
++        restrict = restricteds[i]
++        norrandom = random / baseline
++        if norrandom < a:
++            a = norrandom
++        random_nors.append(norrandom)
++        norres = restrict / baseline
++        res_nors.append(norres)
++        if norres < b:
++            b = norres
++        f.write(f'{test},{baseline},{random},{restrict},{norrandom},{norres}\n')
++    print('min score', a, b)
++    f.write(f'geomean,0,0,0,{geomean(random_nors)},{geomean(res_nors)}\n')
++    f.close()
++
+diff --git a/PerformanceTests/JetStream2/process.py b/PerformanceTests/JetStream2/process.py
+new file mode 100644
+index 000000000000..84938df2c82e
+--- /dev/null
++++ b/PerformanceTests/JetStream2/process.py
+@@ -0,0 +1,120 @@
++import re
++import math
++
++from numpy.lib.function_base import average
++
++start_re = '    Startup: (\d+(?:.\d+)?)'
++worst_re = '    Worst Case: (\d+(?:.\d+)?)'
++avg_re = '    Average: (\d+(?:.\d+)?)'
++time_re = '    Wall time: (\d+(?:.\d+)?\.\d+)' 
++score_re = '    Score: (\d+(?:.\d+)?)'
++
++jitTests = ["3d-cube-SP", "3d-raytrace-SP", "acorn-wtb", "ai-astar", "Air", "async-fs", "Babylon", "babylon-wtb", "base64-SP", "Basic", "Box2D", "cdjs", "chai-wtb", "coffeescript-wtb", "crypto", "crypto-aes-SP", "crypto-md5-SP", "crypto-sha1-SP", "date-format-tofte-SP", "date-format-xparb-SP", "delta-blue", "earley-boyer", "espree-wtb", "first-inspector-code-load", "FlightPlanner", "float-mm.c", "gaussian-blur", "gbemu", "hash-map", "jshint-wtb", "json-parse-inspector", "json-stringify-inspector", "lebab-wtb", "mandreel", "ML", "multi-inspector-code-load", "n-body-SP", "navier-stokes", "octane-code-load", "octane-zlib", "OfflineAssembler", "pdfjs", "prepack-wtb", "raytrace", "regex-dna-SP", "regexp", "richards", "splay", "stanford-crypto-aes", "stanford-crypto-pbkdf2", "stanford-crypto-sha256", "string-unpack-code-SP", "tagcloud-SP", "typescript", "uglify-js-wtb", "UniPoker"]
++
++def geomean(values):
++    if not len(values):
++        return None
++
++    product = 1.0
++
++    for x in values:
++        product *= x
++
++    return math.pow(product, (1.0 / len(values)))
++
++def mean(values):
++    if not len(values):
++        return None
++
++    res = 0.0
++    for val in values:
++        res += val
++
++    return res / len(values)
++
++def variance(values):
++    if not len(values):
++        return None
++
++    average = mean(values)
++    res = 0.0
++    for val in values:
++        res += (val - average) * (val - average)
++
++    return res / (len(values) - 1)
++
++def process(file):
++    f = open(file)
++    startup, worst, avg, score, tt = 0.0, 0.0, 0.0, 0.0, 0.0
++    for line in f:
++        re_match = re.match(start_re, line)
++        if re_match:
++            startup = float(re_match.group(1))
++        
++        re_match = re.match(worst_re, line)
++        if re_match:
++            worst = float(re_match.group(1))
++
++        re_match = re.match(avg_re, line)
++        if re_match:
++            avg = float(re_match.group(1))
++
++        re_match = re.match(score_re, line)
++        if re_match:
++            score = float(re_match.group(1))
++
++        re_match = re.match(time_re, line)
++        if re_match:
++            tt = float(re_match.group(1)[2:]) + float(re_match.group(1)[:1]) * 60
++            break
++
++    f.close()
++
++    return startup, worst, avg, score, tt
++
++
++if __name__ == '__main__':
++    baselines = []
++    errors = []
++    for test in jitTests:
++        avgs = []
++        for i in range(0, 100):
++            result = process(f"baseline/{i}/{test}.txt")
++            #avgs.append(result[0])
++            avgs.append(result[-1])
++        # print(test, mean(avgs))
++        baselines.append(mean(avgs))
++
++    baselines.append(geomean(baselines)) 
++
++    restricteds = []
++    for test in jitTests:                            
++        avgs = []                                        
++        for i in range(0, 100):                                  
++            result = process(f"restricted/{i}/{test}.txt") 
++            #avgs.append(result[0])                       
++            avgs.append(result[-1])                       
++        # print(test, mean(avgs))
++        restricteds.append(mean(avgs))
++
++    restricteds.append(geomean(restricteds))
++
++    f = open('res.txt', 'w')
++    tplt = "{0:^30}\t{1:^10}\t{2:^10}\t{3:^20}\n"
++    f.write(tplt.format('benchmark', 'baseline', 'JITShield', 'normalized JITShield'))
++    print(tplt.format('benchmark', 'baseline', 'JITShield', 'normalized JITShield'), end='')
++    jitTests.append('geomean')
++    b = 0.0
++    for i, test in enumerate(jitTests):
++        baseline = baselines[i]
++        restrict = restricteds[i]
++        norres = restrict / baseline
++        if norres > b:
++            b = norres
++        f.write(tplt.format(test, "%.4f" % baseline, "%.4f" % restrict, "%.4f" % norres))
++        if i < 4 or i > len(jitTests) - 5:
++            if i == len(jitTests) - 4:
++                print('...............................................................................')
++            print(tplt.format(test, "%.4f" % baseline, "%.4f" % restrict, "%.4f" % norres), end='')
++    f.close()
++
+diff --git a/PerformanceTests/JetStream2/run.sh b/PerformanceTests/JetStream2/run.sh
+new file mode 100644
+index 000000000000..cf8c27f5cb78
+--- /dev/null
++++ b/PerformanceTests/JetStream2/run.sh
+@@ -0,0 +1 @@
++python3 jetdriver.py ~/v8-new/v8/out/baseline/d8 ~/v8-new/v8/out/random/d8 ~/v8-new/v8/out/restricted/d8

@@ -1,0 +1,1124 @@
+diff --git a/.gitignore b/.gitignore
+index 61480b5ec5..e54a925a68 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -106,4 +106,5 @@ turbo*.cfg
+ turbo*.dot
+ turbo*.json
+ v8.ignition_dispatches_table.json
+-
++.idea
++*.txt
+diff --git a/cmake_ninja_wrapper.py b/cmake_ninja_wrapper.py
+new file mode 100644
+index 0000000000..bd1a97a7fc
+--- /dev/null
++++ b/cmake_ninja_wrapper.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++
++import sys
++import os
++import subprocess
++import shutil
++import re
++import select
++# ---------------------- Configuration section ------------------------------
++
++REAL_CMAKE = '/usr/bin/cmake'
++if not os.path.isfile(REAL_CMAKE):
++    REAL_CMAKE = '/usr/bin/cmake'
++if not os.path.isfile(REAL_CMAKE):
++    REAL_CMAKE = shutil.which('cmake')
++if not os.path.isfile(REAL_CMAKE):
++    sys.exit('Could not find cmake!')
++NINJA_PATH = shutil.which('ninja')
++if not os.path.isfile(NINJA_PATH):
++    sys.exit('Could not find ninja!')
++
++TRACING = False
++
++# --------------------------- Code section ----------------------------------
++
++
++def trace(message, argv = []):
++    if not TRACING:
++        return
++
++    with open('/tmp/cmake_wrapper.log', 'a') as log:
++        if not argv == []:
++            log.write("\n\n")
++
++        log.write(message)
++
++        if not argv == []:
++            argv = '"%s"' % ('" "'.join(argv))
++            log.write("\n\n\t%s\n\tat: %s\n" % (argv, os.getcwd()))
++
++
++def call_cmake(passing_args):
++    """Call real cmake as a subprocess passing it's output both to stdout and trace file."""
++    passing_args = [REAL_CMAKE] + passing_args
++    trace("Calling real cmake:", passing_args)
++
++    proc = subprocess.Popen(passing_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
++    while True:
++        reads = [proc.stdout.fileno(), proc.stderr.fileno()]
++        ret = select.select(reads, [], [])
++
++        for fd in ret[0]:
++            if fd == proc.stdout.fileno():
++                line = proc.stdout.readline()
++                sys.stdout.buffer.write(line)
++                sys.stdout.flush()
++                trace(line)
++            if fd == proc.stderr.fileno():
++                line = proc.stderr.readline()
++                sys.stderr.buffer.write(line)
++                sys.stderr.flush()
++                trace(line)
++
++        if proc.poll() != None:
++            break
++
++    for line in proc.stdout:
++        sys.stdout.buffer.write(line)
++        trace(line)
++
++    for line in proc.stderr:
++        sys.stderr.buffer.write(line)
++        trace(line)
++
++    return proc.poll()
++
++
++def is_real_project():
++    """Detect if called inside clion private directory."""
++    cwd = os.getcwd()
++    # return "clion" in cwd and "cmake" in cwd and "generated" in cwd
++    return True
++
++class CMakeCache(object):
++    """CMake cache management utility"""
++    def __init__(self, path):
++        super(CMakeCache, self).__init__()
++        self.path = path
++    
++    def alter(self, variable, value):
++        """
++        Change a variable value in CMake cache.
++        TODO: Add variable if it doesn't already exist
++        """
++        if not os.path.isfile(self.path):
++            return
++
++        with open(self.path, 'r') as cache_file:
++            cache_data = cache_file.read()
++
++        pattern = '%s=.*' % re.escape(variable)
++        replacement = '%s=%s' % (variable, value)
++        cache_data = re.sub(pattern, replacement, cache_data)
++
++        with open(self.path, 'w') as cache_file:
++            cache_file.write(cache_data)
++
++    def ninjafy(self):
++        self.alter('CMAKE_GENERATOR:INTERNAL', 'Ninja')
++        self.alter('CMAKE_MAKE_PROGRAM:FILEPATH', NINJA_PATH)
++
++    def makefy(self):
++        self.alter('CMAKE_GENERATOR:INTERNAL', 'Unix Makefiles')
++        self.alter('CMAKE_MAKE_PROGRAM:FILEPATH', '/usr/bin/make')
++
++
++def ninjafy_argv(original):
++    """Replace Unix Makefiles generator with Ninja"""
++    processed = []
++    next_g = False
++    for a in original:
++        if a == '-G':
++            next_g = True
++        elif next_g and 'Unix Makefiles' in a:
++            a = a.replace('Unix Makefiles', 'Ninja')
++
++        processed.append(a)
++
++    return processed
++
++
++trace('Originally called:', sys.argv)
++
++# Enable wrapping logic only when called inside clion private directory.
++if not is_real_project():
++    sys.exit(call_cmake(sys.argv[1:]))
++
++# Check if generator argument was specified
++if '-G' in sys.argv:
++    # Generate Makefile artifacts required by CLion
++    cache = CMakeCache('CMakeCache.txt')
++    cache.makefy()
++    exit_code = call_cmake(sys.argv[1:])
++    if exit_code != 0:
++        sys.exit(exit_code)
++
++    # Generate Ninja artifacts for actual build
++    passing_args = ninjafy_argv(sys.argv[1:])
++    cache.ninjafy()
++    sys.exit(call_cmake(passing_args))
++else:
++    sys.exit(call_cmake(sys.argv[1:]))
+diff --git a/compare_spilldata.py b/compare_spilldata.py
+new file mode 100644
+index 0000000000..1418b3d76c
+--- /dev/null
++++ b/compare_spilldata.py
+@@ -0,0 +1,56 @@
++#!/usr/bin/env python
++# coding=utf-8
++import os
++spill_baseline=[]
++spill_restricted=[]
++for _, _, files in os.walk("/home/jz/v8-new/v8/spilldata_baseline/sunspider"):
++    for file in files:
++        count=0
++        with open('/home/jz/v8-new/v8/spilldata_baseline/sunspider/'+file,'r') as f:
++            lines=f.readlines()
++            for line in lines:
++                if 'spill count' in line:
++                    count=count + int(line.split(':')[1].strip())
++            spill_baseline.append(count)
++
++for _, _, files in os.walk("/home/jz/v8-new/v8/spilldata_restricted/sunspider"):
++    for file in files:
++        count=0
++        with open('/home/jz/v8-new/v8/spilldata_restricted/sunspider/'+file,'r') as f:
++            lines=f.readlines()
++            for line in lines:
++                if 'spill count' in line:
++                    count=count + int(line.split(':')[1].strip())
++            spill_restricted.append(count)
++
++import numpy as np
++print('sunspider baseline mean spill:'+str(np.mean(spill_baseline)))
++print('sunspider restricted mean spill:'+str(np.mean(spill_restricted)))
++
++spill_baseline=[]
++spill_restricted=[]
++for _, _, files in os.walk("/home/jz/v8-new/v8/spilldata_baseline/kraken"):
++    for file in files:
++        count=0
++        with open('/home/jz/v8-new/v8/spilldata_baseline/kraken/'+file,'r') as f:
++            lines=f.readlines()
++            for line in lines:
++                if 'spill count' in line:
++                    count=count + int(line.split(':')[1].strip())
++            spill_baseline.append(count)
++
++for _, _, files in os.walk("/home/jz/v8-new/v8/spilldata_restricted/kraken"):
++    for file in files:
++        count=0
++        with open('/home/jz/v8-new/v8/spilldata_restricted/kraken/'+file,'r') as f:
++            lines=f.readlines()
++            for line in lines:
++                if 'spill count' in line:
++                    count=count + int(line.split(':')[1].strip())
++            spill_restricted.append(count)
++
++
++import numpy as np
++print('kraken baseline mean spill:'+str(np.mean(spill_baseline)))
++print('kraken restricted mean spill:'+str(np.mean(spill_restricted)))
++
+diff --git a/env.sh b/env.sh
+new file mode 100644
+index 0000000000..6f81ddfc89
+--- /dev/null
++++ b/env.sh
+@@ -0,0 +1,2 @@
++#!/bin/bash
++export PATH=~/depot_tools:$PATH
+diff --git a/failed_test b/failed_test
+new file mode 100644
+index 0000000000..a718464c4c
+--- /dev/null
++++ b/failed_test
+@@ -0,0 +1 @@
++out/x64.release/d8 --test test/mjsunit/mjsunit.js test/mjsunit/asm/sqlite3/sqlite-pointer-masking.js --random-seed=-1610485042 --nohard-abort --testing-d8-test-runner
+diff --git a/src/common/globals.h b/src/common/globals.h
+index 516319cb98..83172e035f 100644
+--- a/src/common/globals.h
++++ b/src/common/globals.h
+@@ -20,6 +20,13 @@
+ 
+ #define V8_INFINITY std::numeric_limits<double>::infinity()
+ 
++#ifdef DEBUG
++#define DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__)
++#else
++#define DEBUG_PRINT(...) (void)0
++#endif
++
++
+ namespace v8 {
+ 
+ namespace base {
+diff --git a/src/compiler/backend/instruction-selector.cc b/src/compiler/backend/instruction-selector.cc
+index ed4b976f58..79bd830bde 100644
+--- a/src/compiler/backend/instruction-selector.cc
++++ b/src/compiler/backend/instruction-selector.cc
+@@ -25,6 +25,7 @@ namespace v8 {
+ namespace internal {
+ namespace compiler {
+ 
++
+ InstructionSelector::InstructionSelector(
+     Zone* zone, size_t node_count, Linkage* linkage,
+     InstructionSequence* sequence, Schedule* schedule,
+@@ -82,6 +83,7 @@ InstructionSelector::InstructionSelector(
+   }
+ }
+ 
++
+ bool InstructionSelector::SelectInstructions() {
+   // Mark the inputs of all phis in loop headers as used.
+   BasicBlockVector* blocks = schedule()->rpo_order();
+@@ -98,6 +100,7 @@ bool InstructionSelector::SelectInstructions() {
+     }
+   }
+ 
++
+   // Visit each basic block in post order.
+   for (auto i = blocks->rbegin(); i != blocks->rend(); ++i) {
+     VisitBlock(*i);
+@@ -119,6 +122,7 @@ bool InstructionSelector::SelectInstructions() {
+     size_t start = instruction_block->code_start();
+     DCHECK_LE(end, start);
+     StartBlock(RpoNumber::FromInt(block->rpo_number()));
++
+     if (end != start) {
+       while (start-- > end + 1) {
+         UpdateRenames(instructions_[start]);
+diff --git a/src/compiler/backend/instruction-selector.h b/src/compiler/backend/instruction-selector.h
+index 18bc4ccfcb..151b9fce43 100644
+--- a/src/compiler/backend/instruction-selector.h
++++ b/src/compiler/backend/instruction-selector.h
+@@ -286,6 +286,7 @@ class V8_EXPORT_PRIVATE InstructionSelector final {
+   };
+   enum EnableTraceTurboJson { kDisableTraceTurboJson, kEnableTraceTurboJson };
+ 
++  static std::unordered_set<ArchOpcode> &sensitive_opcodes;
+   InstructionSelector(
+       Zone* zone, size_t node_count, Linkage* linkage,
+       InstructionSequence* sequence, Schedule* schedule,
+diff --git a/src/compiler/backend/instruction.cc b/src/compiler/backend/instruction.cc
+index e1e54c9d9f..7de6d48743 100644
+--- a/src/compiler/backend/instruction.cc
++++ b/src/compiler/backend/instruction.cc
+@@ -1,7 +1,7 @@
+ // Copyright 2014 the V8 project authors. All rights reserved.
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+-
++//#define MY_DEBUG
+ #include "src/compiler/backend/instruction.h"
+ 
+ #include <cstddef>
+@@ -20,6 +20,278 @@
+ namespace v8 {
+ namespace internal {
+ namespace compiler {
++// movsd may be too complex because its syntax is not portable with other instructions
++std::unordered_set<ArchOpcode> &InstructionSequence::sensitive_opcodes = *new std::unordered_set<ArchOpcode>{
++//    kX64Add, kX64Add32, kX64And, kX64And32,kX64Cmp, kX64Cmp32, kX64Cmp16, kX64Cmp8,
++//    kX64Or, kX64Or32, kX64Sub, kX64Sub32, kX64Xor, kX64Xor32, kX64Test, kX64Test8, kX64Test16, kX64Test32,
++      kX64Movb, kX64Movl, kX64Movq, kX64Movw,
++      kX64Lea, kX64Lea32
++};
++
++std::unordered_set<uint8_t>& InstructionSequence::invalid_codes = *new std::unordered_set<uint8_t> {
++  0x0f,
++  0x50, 0x51, 0x52, 0x53, 0x54, 0x56, 0x57,
++  0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5e, 0x5f
++//  0x74, 0x7c, 0x84, 0x8c, 0xb4,
++//  0x90, 0x91, 0x92, 0x93, 0x94, 0x98, 0x99,
++//  0xc3, 0xc9, 0xcc, 0xcf, 0xec, 0xee, 0xef
++};
++
++
++// 如果前一个操作数是固定寄存器怎么办呢，要不先不考虑固定的了
++bool get_virtual_reg(InstructionOperand* op, uint32_t& reg) {
++  if (!op->IsUnallocated())
++    return false;
++  UnallocatedOperand* un_op = UnallocatedOperand::cast(op);
++  // 如果有固定的寄存器分配策略应该也处理不了
++  if (un_op->HasFixedPolicy())
++    return false;
++  reg = un_op->virtual_register();
++  return true;
++}
++
++bool get_imm(InstructionOperand* op, int32_t& imm, InstructionSequence* sequence_) {
++  if (!op->IsImmediate())
++    return false;
++  ImmediateOperand* imm_op = ImmediateOperand::cast(op);
++  if (imm_op->type() == ImmediateOperand::INDEXED) {
++    imm = sequence_->immediates().at(imm_op->indexed_value()).ToInt32();
++
++  } else if(imm_op->type() == ImmediateOperand::ImmediateType::INLINE) {
++    imm = imm_op->inline_value();
++  }
++  return true;
++}
++
++
++void InstructionSequence::add_sensitive_map(Instruction* instr){
++    InstructionCode opcode = instr->opcode();
++    ArchOpcode arch_opcode = ArchOpcodeField::decode(opcode);
++    if (sensitive_opcodes.count(arch_opcode) > 0) {
++      if (instr->InputCount() > 4)
++        return;
++      InstructionOperand *output = instr->OutputCount() ? instr->Output() : instr->InputAt(instr->InputCount() - 1);
++      InstructionOperand *input1 = instr->InputAt(0);
++      InstructionOperand *input2 = instr->InputCount() > 1 ? instr->InputAt(1) : nullptr;
++      ImmediateOperand *imm = nullptr;
++      int32_t displacement = 0;
++      uint32_t output_reg, virtual_reg;
++      uint32_t virtual_reg2;
++
++      AddressingMode mode = AddressingModeField::decode(instr->opcode());
++      switch (mode) {
++        case AddressingMode::kMode_MR:
++          break;
++        case kMode_None: // r1, r2
++//          if (!get_virtual_reg(input1, virtual_reg))
++//            break;
++//          if (arch_opcode == kX64Sub) {
++            // 用输出约束输入
++            // map[input] = output
++            // 这种应该很少，mod很少
++            // sub rsp/r12
++            // sub rsi/r14
++            // sub rdi/r15
++            // get vreg
++//            add_83_register(virtual_reg);
++//          }
++          break;
++        case kMode_MRI: // leal rax,[rbx - 0x3d]
++          if (!get_virtual_reg(input1, virtual_reg))
++            break;
++          // TODO FIX When output_reg is fixed or output_reg has been allocated
++          if (!get_virtual_reg(output, output_reg))
++            break;
++          if (!get_imm(input2, displacement, this))
++            break;
++          // mod为disp的长度, reg和rm为output和input
++          // 判断一下disp的长度
++          // map[input1] = output
++          if (is_int8(displacement)) {
++            add_scale2_registers(output_reg, virtual_reg);
++          } else {
++            add_scale4_registers(output_reg, virtual_reg);
++          }
++          break;
++        case kMode_MR1: // leal rax,[rbx + rax]
++        case kMode_MR2: // leal rbx,[rax + rbx * 2]
++        case kMode_MR4: // leal rbx, [rax + rbx * 4]
++        case kMode_MR8: // leal rbx, [rax + rbx * 8]
++          break;
++        case kMode_MR1I: // leal rbx, [rax + rbx - 0x3d]
++          // don't know why leal rab, [rbx - 0x3d] belonging to this
++          if (!get_virtual_reg(input1, virtual_reg))
++            break;
++          if (!get_virtual_reg(input2, virtual_reg2))
++            break;
++          // map sib
++          add_scale1_registers(virtual_reg, virtual_reg2);
++          imm = static_cast<ImmediateOperand *>(instr->InputAt(2));
++          if (!get_imm(imm, displacement, this)) break;
++          // map modrm
++          if (!get_virtual_reg(output, output_reg))
++            break;
++          if (is_int8(displacement)) {
++            add_scale2_registers(output_reg, virtual_reg);
++          } else {
++            add_scale4_registers(output_reg, virtual_reg);
++          }
++          break;
++        case kMode_MR2I: // leal rbx, [rax + rbx * 2 - 0x3d]
++          if (!get_virtual_reg(input1, virtual_reg))
++            break;
++          if (!get_virtual_reg(input2, virtual_reg2))
++            break;
++          // map sib
++          add_scale2_registers(virtual_reg, virtual_reg2);
++          imm = static_cast<ImmediateOperand *>(instr->InputAt(2));
++          if (!get_imm(imm, displacement, this)) break;
++          // map modrm
++//          if (!get_virtual_reg(output, output_reg))
++//            break;
++//          if (is_int8(displacement)) {
++//            add_scale2_registers(output_reg, virtual_reg);
++//          } else {
++//            add_scale4_registers(output_reg, virtual_reg);
++//          }
++          break;
++        case kMode_MR4I: // leal rbx, [rax + rbx * 4 - 0x3d]
++          if (!get_virtual_reg(input1, virtual_reg))
++            break;
++          if (!get_virtual_reg(input2, virtual_reg2))
++            break;
++          // map sib
++          add_scale4_registers(virtual_reg, virtual_reg2);
++          imm = static_cast<ImmediateOperand *>(instr->InputAt(2));
++          if (!get_imm(imm, displacement, this)) break;
++          // map modrm
++//          if (!get_virtual_reg(output, output_reg))
++//            break;
++//          if (is_int8(displacement)) {
++//            add_scale2_registers(output_reg, virtual_reg);
++//          } else {
++//            add_scale4_registers(output_reg, virtual_reg);
++//          }
++          break;
++        case kMode_MR8I: // leal rbx, [rax + rbx * 8 - 0x3d]
++          if (!get_virtual_reg(input1, virtual_reg))
++            break;
++          if (!get_virtual_reg(input2, virtual_reg2))
++            break;
++          // map sib
++          add_scale8_registers(virtual_reg, virtual_reg2);
++          imm = static_cast<ImmediateOperand *>(instr->InputAt(2));
++          if (!get_imm(imm, displacement, this)) break;
++          // map modrm
++//          if (!get_virtual_reg(output, output_reg))
++//            break;
++//          if (is_int8(displacement)) {
++//            add_scale2_registers(output_reg, virtual_reg);
++//          } else {
++//            add_scale4_registers(output_reg, virtual_reg);
++//          }
++          break;
++        case kMode_M1: // leal rbx, [rbp + rbx]
++        case kMode_M2: // leal rbx,[rbp + rbx * 2]
++        case kMode_M4: // leal rbx,[rbp + rbx * 4]
++        case kMode_M8: // leal rbx,[rbp + rbx * 8]
++        case kMode_M1I: // leal rbx,[rbp + rbx - 0x3d]
++        case kMode_M2I: // leal rbx, [rbp + rbx * 2 - 0x3d]
++        case kMode_M4I: // leal rbx,[rbp + rbx * 4 - 0x3d]
++        case kMode_M8I: // leal rbx,[rbp + rbx * 8 - 0x3d]
++        case kMode_Root:
++          break;
++      }
++    }
++}
++
++void InstructionSequence::construct_sensitive_map() {
++  for (int i = 0; i < this->LastInstructionIndex(); ++i) {
++    add_sensitive_map(InstructionAt(i));
++  }
++}
++
++uint8_t InstructionSequence::gen_sib(uint8_t scale, uint8_t index, uint8_t base) {
++  return (scale << 6) + (index << 3) + base;
++}
++
++bool InstructionSequence::check_allocate(uint32_t vreg, uint32_t preg) {
++#ifdef NONE
++  if (op_registers.count(vreg) > 0) {
++    Register reg = Register::from_code(preg);
++    uint8_t code = gen_sib(static_cast<uint8_t>(0b11), static_cast<uint8_t >(0b101), static_cast<uint8_t>(reg.low_bits()));
++    if (invalid_codes.count(code) > 0) {
++      DEBUG_PRINT("assign %s to v%d failed\n", RegisterName(Register::from_code(preg)), vreg);
++      DEBUG_PRINT("code = %x\n", code);
++      return false;
++    }
++  }
++#endif
++
++  // check
++  uint32_t index = Register::from_code(preg).low_bits();
++  if (index == 0b010 || index == 0b011) {
++    if (rev_restricted_maps[1].count(vreg)) {
++      DEBUG_PRINT("assign %s to v%d failed\n", RegisterName(Register::from_code(preg)), vreg);
++      return false;
++    }
++  }
++
++  for (int i = 0; i < 4; ++i) {
++    if (rev_restricted_maps[i].count(vreg) == 0)
++      continue;
++    auto& candidate_set = rev_restricted_maps[i][vreg];
++    for (auto& val : candidate_set) {
++      if (v2p_regs.count(val) == 0)
++        continue;
++      uint32_t base = Register::from_code(v2p_regs[val]).low_bits();
++      uint8_t code = gen_sib(static_cast<uint8_t>(i), index, base);
++      if (invalid_codes.count(code) > 0) {
++        DEBUG_PRINT("assign %s to v%d failed\n", RegisterName(Register::from_code(preg)), vreg);
++        DEBUG_PRINT("v%d:%s, v%d:%s gen code %x\n", vreg, RegisterName(Register::from_code(index)), val, RegisterName(Register::from_code(base)), static_cast<uint32_t>(code));
++        return false;
++      }
++    }
++  }
++
++  // reverse check
++  uint32_t base = Register::from_code(preg).low_bits();
++  index = 0;
++  for (int i = 0; i < 4; ++i) {
++    if (restricted_maps[i].count(vreg) == 0)
++      continue;
++    auto& candidate_set = restricted_maps[i][vreg];
++    for (auto& val : candidate_set) {
++      if (v2p_regs.count(val) == 0)
++        continue;
++      index = Register::from_code(v2p_regs[val]).low_bits();
++      uint8_t code = gen_sib(static_cast<uint8_t>(i), index, base);
++      if (invalid_codes.count(code) > 0) {
++        DEBUG_PRINT("assign %s to v%d failed\n", RegisterName(Register::from_code(preg)), vreg);
++        DEBUG_PRINT("v%d:%s, v%d:%s gen code %x\n", val, RegisterName(Register::from_code(index)), vreg, RegisterName(Register::from_code(base)), static_cast<uint32_t>(code));
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
++void InstructionSequence::print_restricted_maps(){
++#ifdef DEBUG
++  for (int i = 0; i < 4; ++i) {
++    DEBUG_PRINT("mod %d\n", i);
++    for (auto& pairs : restricted_maps[i]) {
++      DEBUG_PRINT("v%d", pairs.first);
++      DEBUG_PRINT(" ->");
++      for (auto& reg : pairs.second) {
++        DEBUG_PRINT("v%d ", reg);
++      }
++      DEBUG_PRINT("\n");
++    }
++  }
++  DEBUG_PRINT("\n");
++#endif
++}
+ 
+ const RegisterConfiguration* (*GetRegConfig)() = RegisterConfiguration::Default;
+ 
+@@ -470,6 +742,7 @@ std::ostream& operator<<(std::ostream& os, const FlagsCondition& fc) {
+ }
+ 
+ std::ostream& operator<<(std::ostream& os, const Instruction& instr) {
++  // instr format
+   os << "gap ";
+   for (int i = Instruction::FIRST_GAP_POSITION;
+        i <= Instruction::LAST_GAP_POSITION; i++) {
+@@ -1143,6 +1416,30 @@ std::ostream& operator<<(std::ostream& os, const InstructionSequence& code) {
+   return os;
+ }
+ 
++
++void InstructionSequence::add_scale1_registers(uint32_t reg, uint32_t res) {
++  restricted_maps[0][reg].insert(res);
++  rev_restricted_maps[0][res].insert(reg);
++}
++
++void InstructionSequence::add_scale2_registers(uint32_t reg, uint32_t res) {
++  restricted_maps[1][reg].insert(res);
++  rev_restricted_maps[1][res].insert(reg);
++}
++
++void InstructionSequence::add_scale4_registers(uint32_t reg, uint32_t res) {
++  restricted_maps[2][reg].insert(res);
++  rev_restricted_maps[2][res].insert(reg);
++}
++
++void InstructionSequence::add_scale8_registers(uint32_t reg, uint32_t res) {
++  restricted_maps[3][reg].insert(res);
++  rev_restricted_maps[3][res].insert(reg);
++}
++
++void InstructionSequence::add_83_register(uint32_t reg) {
++}
++
+ }  // namespace compiler
+ }  // namespace internal
+ }  // namespace v8
+diff --git a/src/compiler/backend/instruction.h b/src/compiler/backend/instruction.h
+index 55fce0aeeb..a3410951da 100644
+--- a/src/compiler/backend/instruction.h
++++ b/src/compiler/backend/instruction.h
+@@ -1688,7 +1688,33 @@ class V8_EXPORT_PRIVATE InstructionSequence final
+ 
+   void RecomputeAssemblyOrderForTesting();
+ 
+- private:
++  // 4 map [scale]/[mod][vreg] := vreg1, vreg2, vreg3
++  std::unordered_map<uint32_t, std::unordered_set<uint32_t>> restricted_maps[4];
++  std::unordered_map<uint32_t, std::unordered_set<uint32_t>> rev_restricted_maps[4];
++  // not allowed to be rsp, r12, rdi, r14, rsi, r15
++//  std::unordered_set<uint32_t> op_registers;
++  // for quick search vreg to physical reg, 不需要纠结是什么寄存器，只需要知道前置寄存器的编码就可以了.
++
++  std::unordered_map<uint32_t, uint32_t> v2p_regs;
++  // malicous byte
++  static std::unordered_set<uint8_t>& invalid_codes;
++  static std::unordered_set<ArchOpcode>& sensitive_opcodes;
++
++  // 构建sensitive map
++  void add_sensitive_map(Instruction* instr);
++  void construct_sensitive_map();
++  // 用res约束reg
++  void add_scale1_registers(uint32_t reg, uint32_t res);
++  void add_scale2_registers(uint32_t reg, uint32_t res);
++  void add_scale4_registers(uint32_t reg, uint32_t res);
++  void add_scale8_registers(uint32_t reg, uint32_t res);
++  void add_83_register(uint32_t reg);
++
++  // 检查分配产生的modr/m或者sib是否合法
++  bool check_allocate(uint32_t vreg, uint32_t preg);
++  void print_restricted_maps();
++
++private:
+   friend V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&,
+                                                     const InstructionSequence&);
+ 
+@@ -1713,9 +1739,9 @@ class V8_EXPORT_PRIVATE InstructionSequence final
+   ZoneVector<MachineRepresentation> representations_;
+   int representation_mask_;
+   DeoptimizationVector deoptimization_entries_;
+-
+   // Used at construction time
+   InstructionBlock* current_block_;
++  uint8_t gen_sib(uint8_t scale, uint8_t index, uint8_t base);
+ };
+ 
+ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&,
+diff --git a/src/compiler/backend/register-allocator.cc b/src/compiler/backend/register-allocator.cc
+index 8280665c90..806b38477d 100644
+--- a/src/compiler/backend/register-allocator.cc
++++ b/src/compiler/backend/register-allocator.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2014 the V8 project authors. All rights reserved.
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++//#define MY_DEBUG
+ 
+ #include "src/compiler/backend/register-allocator.h"
+ 
+@@ -3495,6 +3496,11 @@ void LinearScanAllocator::AllocateRegisters() {
+     DCHECK(inactive_live_ranges(reg).empty());
+   }
+ 
++#ifdef MY_DEBUG
++  code()->print_restricted_maps();
++#endif
++  spill_count = 0;
++  code()->construct_sensitive_map();
+   SplitAndSpillRangesDefinedByMemoryOperand();
+   data()->ResetSpillState();
+ 
+@@ -3745,10 +3751,16 @@ void LinearScanAllocator::AllocateRegisters() {
+   if (data()->is_trace_alloc()) {
+     PrintRangeOverview(std::cout);
+   }
++  DEBUG_PRINT("spill count : %d\n", spill_count);
+ }
+ 
+ void LinearScanAllocator::SetLiveRangeAssignedRegister(LiveRange* range,
+                                                        int reg) {
++  if (!code()->check_allocate(range->TopLevel()->vreg(), reg)) {
++    DEBUG_PRINT("unhandled branch\n");
++  }
++  code()->v2p_regs[range->TopLevel()->vreg()] = reg;
++  DEBUG_PRINT("assign v%d to %s\n", range->TopLevel()->vreg(), RegisterName(reg));
+   data()->MarkAllocated(range->representation(), reg);
+   range->set_assigned_register(reg);
+   range->SetUseHints(reg);
+@@ -4008,27 +4020,47 @@ bool LinearScanAllocator::TryAllocatePreferredReg(
+       TRACE("Assigning preferred reg %s to live range %d:%d\n",
+             RegisterName(hint_register), current->TopLevel()->vreg(),
+             current->relative_id());
+-      SetLiveRangeAssignedRegister(current, hint_register);
+-      return true;
++      if (code()->check_allocate(current->TopLevel()->vreg(), hint_register)) {
++        SetLiveRangeAssignedRegister(current, hint_register);
++        return true;
++      } else {
++        return false;
++      }
+     }
+   }
+   return false;
+ }
+ 
+-int LinearScanAllocator::PickRegisterThatIsAvailableLongest(
++bool LinearScanAllocator::PickRegisterThatIsAvailableLongest(
+     LiveRange* current, int hint_reg,
+-    const Vector<LifetimePosition>& free_until_pos) {
++    const Vector<LifetimePosition>& free_until_pos, int& reg) {
++  auto instructions = code();
+   int num_regs = 0;  // used only for the call to GetFPRegisterSet.
+-  int num_codes = num_allocatable_registers();
+-  const int* codes = allocatable_register_codes();
++  int old_num_codes = num_allocatable_registers();
++  const int* old_codes = allocatable_register_codes();
++
+   MachineRepresentation rep = current->representation();
+   if (!kSimpleFPAliasing && (rep == MachineRepresentation::kFloat32 ||
+                              rep == MachineRepresentation::kSimd128)) {
+-    GetFPRegisterSet(rep, &num_regs, &num_codes, &codes);
++    GetFPRegisterSet(rep, &num_regs, &old_num_codes, &old_codes);
+   }
+ 
+-  DCHECK_GE(free_until_pos.length(), num_codes);
++  DCHECK_GE(free_until_pos.length(), old_num_codes);
++
++  int vreg = current->TopLevel()->vreg();
++  std::vector<int> codes;
++  for (int i = 0; i < old_num_codes; ++i) {
++    if (instructions->check_allocate(vreg, old_codes[i])) {
++      codes.emplace_back(old_codes[i]);
++    }
++  }
+ 
++  if (codes.empty()) {
++    // error, not register can be use
++    return false;
++  }
++
++  int num_codes = static_cast<int>(codes.size());
+   // Find the register which stays free for the longest time. Check for
+   // the hinted register first, as we might want to use that one. Only
+   // count full instructions for free ranges, as an instruction's internal
+@@ -4037,7 +4069,10 @@ int LinearScanAllocator::PickRegisterThatIsAvailableLongest(
+   // cloberred after the call except for the argument registers, which are
+   // set before the call. Hence, the argument registers always get ignored,
+   // as their available time is shorter.
+-  int reg = (hint_reg == kUnassignedRegister) ? codes[0] : hint_reg;
++  reg = (hint_reg == kUnassignedRegister) ? codes[0] : hint_reg;
++  if (!instructions->check_allocate(vreg, reg)) {
++    reg = codes[0];
++  }
+   int current_free = free_until_pos[reg].ToInstructionIndex();
+   for (int i = 0; i < num_codes; ++i) {
+     int code = codes[i];
+@@ -4055,19 +4090,21 @@ int LinearScanAllocator::PickRegisterThatIsAvailableLongest(
+     }
+   }
+ 
+-  return reg;
++  return true;
+ }
+ 
+ bool LinearScanAllocator::TryAllocateFreeReg(
+     LiveRange* current, const Vector<LifetimePosition>& free_until_pos) {
+   // Compute register hint, if such exists.
+   int hint_reg = kUnassignedRegister;
++
+   current->RegisterFromControlFlow(&hint_reg) ||
+       current->FirstHintPosition(&hint_reg) != nullptr ||
+       current->RegisterFromBundle(&hint_reg);
+ 
+-  int reg =
+-      PickRegisterThatIsAvailableLongest(current, hint_reg, free_until_pos);
++  int reg;
++  if(!PickRegisterThatIsAvailableLongest(current, hint_reg, free_until_pos, reg))
++    return false;
+ 
+   LifetimePosition pos = free_until_pos[reg];
+ 
+@@ -4091,13 +4128,146 @@ bool LinearScanAllocator::TryAllocateFreeReg(
+   DCHECK(pos >= current->End());
+   TRACE("Assigning free reg %s to live range %d:%d\n", RegisterName(reg),
+         current->TopLevel()->vreg(), current->relative_id());
+-  SetLiveRangeAssignedRegister(current, reg);
+ 
++  if (!code()->check_allocate(current->TopLevel()->vreg(), reg))
++    return false;
++
++  SetLiveRangeAssignedRegister(current, reg);
+   return true;
+ }
+ 
++extern bool get_imm(InstructionOperand* op, int32_t& imm, InstructionSequence* sequence_);
++
++int LinearScanAllocator::SplitRRange(LiveRange* current, const Vector<LifetimePosition>& free_until_pos) {
++  uint32_t virtual_reg = current->TopLevel()->vreg();
++  InstructionSequence *instructions = code();
++  UsePosition *register_use = current->NextRegisterPosition(current->Start());
++  std::vector<std::pair<uint8_t, std::pair<uint32_t, uint32_t>>> removing_pairs;
++
++  // erase the map and reverse map
++  auto erase_sensitive_map = [&](const int &output_reg, const int &input_reg, uint8_t scale) {
++    instructions->restricted_maps[scale][output_reg].erase(input_reg);
++    instructions->rev_restricted_maps[scale][input_reg].erase(output_reg);
++    removing_pairs.emplace_back(
++        std::pair<uint8_t, std::pair<uint32_t, uint32_t>>(scale, std::pair<uint32_t, uint32_t>(output_reg, input_reg)));
++  };
++
++  // reverse the use position
++  std::vector<UsePosition *> stack;
++  while (register_use) {
++    stack.emplace_back(register_use);
++
++    register_use = register_use->next();
++    while (register_use && register_use->type() != UsePositionType::kRequiresRegister)
++      register_use = register_use->next();
++  }
++
++  // removing the pairs from end to begin until some register is available
++  int reg;
++  int i = static_cast<int>(stack.size() - 1);
++  for (; i >= 0; --i) {
++    int instr_index = stack[i]->pos().ToInstructionIndex();
++    Instruction *instr = instructions->InstructionAt(instr_index);
++    int32_t displacement;
++    uint32_t output_reg, input_reg;
++    InstructionOperand *output = instr->OutputCount() ? instr->Output() : instr->InputAt(instr->InputCount() - 1);
++    InstructionOperand *input1 = instr->InputAt(0);
++    InstructionOperand *input2 = instr->InputCount() > 1 ? instr->InputAt(1) : nullptr;
++    AddressingMode mode = AddressingModeField::decode(instr->opcode());
++    switch (mode) {
++      case kMode_None:
++      case kMode_MR:
++        break;
++      case kMode_MRI:
++        // map modrm
++#define MR_REG { \
++        get_imm(input2, displacement, instructions); \
++        input_reg = UnallocatedOperand::cast(input1)->virtual_register(); \
++        output_reg = UnallocatedOperand::cast(output)->virtual_register();\
++        if (is_int8(displacement)) { \
++          erase_sensitive_map(output_reg, input_reg, 1); \
++        } else { \
++          erase_sensitive_map(output_reg, input_reg, 2); \
++        }        \
++      }
++      MR_REG
++        break;
++        case kMode_MR1:
++        case kMode_MR2:
++        case kMode_MR4:
++        case kMode_MR8:
++          break;
++#define MRS_REG { \
++        output_reg = UnallocatedOperand::cast(input1)->virtual_register(); \
++        input_reg = UnallocatedOperand::cast(input2)->virtual_register(); \
++        if (output_reg != virtual_reg && input_reg != virtual_reg) {\
++            break;  \
++          }         \
++        }
++        case kMode_MR1I:
++        MRS_REG
++        // unmap sib
++        erase_sensitive_map(output_reg, input_reg, 0);
++        // unmap modrm
++        input_reg = output_reg;
++        output_reg = UnallocatedOperand::cast(output)->virtual_register();
++        get_imm(instr->InputAt(2), displacement, instructions);
++        if (is_int8(displacement)) {
++          erase_sensitive_map(output_reg, input_reg, 1);
++        } else {
++          erase_sensitive_map(output_reg, input_reg, 2);
++        }
++        break;
++        case kMode_MR2I:
++        MRS_REG
++        erase_sensitive_map(output_reg, input_reg, 1);
++        break;
++        case kMode_MR4I:
++        MRS_REG
++        erase_sensitive_map(output_reg, input_reg, 2);
++        break;
++        case kMode_MR8I:
++        MRS_REG
++        erase_sensitive_map(output_reg, input_reg, 3);
++        break;
++        case kMode_M1:
++        case kMode_M2:
++        case kMode_M4:
++        case kMode_M8:
++        case kMode_M1I:
++        case kMode_M2I:
++        case kMode_M4I:
++        case kMode_M8I:
++        case kMode_Root:
++          break;
++    }
++    if (PickRegisterThatIsAvailableLongest(current, -1, free_until_pos, reg)) {
++      LiveRange *tail = SplitRangeAt(current, register_use->pos());
++      // don't know the tail is equal to now
++      uint32_t new_vreg = tail->TopLevel()->vreg();
++      fprintf(stderr, "old reg : v%d\tnew reg : v%d\n", virtual_reg, new_vreg);
++      // 为后面的live range 重建map
++      for (auto &del: removing_pairs) {
++        if (virtual_reg == del.second.first) {
++          instructions->restricted_maps[del.first][tail->TopLevel()->vreg()].insert(del.second.second);
++          instructions->rev_restricted_maps[del.first][del.second.second].insert(tail->TopLevel()->vreg());
++        } else {
++          instructions->rev_restricted_maps[del.first][tail->TopLevel()->vreg()].insert(del.second.second);
++          instructions->restricted_maps[del.first][del.second.second].insert(tail->TopLevel()->vreg());
++        }
++      }
++      AddToUnhandled(tail);
++      return reg;
++    }
++  }
++  // never reach here
++  assert(false);
++  return -1;
++}
++
+ void LinearScanAllocator::AllocateBlockedReg(LiveRange* current,
+                                              SpillMode spill_mode) {
++  spill_count++;
+   UsePosition* register_use = current->NextRegisterPosition(current->Start());
+   if (register_use == nullptr) {
+     // There is no use in the current live range that requires a register.
+@@ -4205,7 +4375,11 @@ void LinearScanAllocator::AllocateBlockedReg(LiveRange* current,
+   current->RegisterFromControlFlow(&hint_reg) ||
+       register_use->HintRegister(&hint_reg) ||
+       current->RegisterFromBundle(&hint_reg);
+-  int reg = PickRegisterThatIsAvailableLongest(current, hint_reg, use_pos);
++  int reg;
++  if (!PickRegisterThatIsAvailableLongest(current, hint_reg, use_pos, reg)){
++    reg = SplitRRange(current, use_pos);
++  }
++  DEBUG_PRINT("blocking v%d pick register %s\n", current->TopLevel()->vreg(), RegisterName(reg));
+ 
+   if (use_pos[reg] < register_use->pos()) {
+     // If there is a gap position before the next register use, we can
+@@ -4240,13 +4414,14 @@ void LinearScanAllocator::AllocateBlockedReg(LiveRange* current,
+   // If there is no register available at all, we can only spill this range.
+   // Happens for instance on entry to deferred code where registers might
+   // become blocked yet we aim to reload ranges.
+-  if (new_end == current->Start()) {
+-    SpillBetween(current, new_end, register_use->pos(), spill_mode);
++  if (new_end <= current->Start()) {
++    SpillBetween(current, current->Start(), register_use->pos(), spill_mode);
+     return;
+   }
+ 
+   // Split at the new end if we found one.
+   if (new_end != current->End()) {
++    // spill error here
+     LiveRange* tail = SplitBetween(current, current->Start(), new_end);
+     AddToUnhandled(tail);
+   }
+diff --git a/src/compiler/backend/register-allocator.h b/src/compiler/backend/register-allocator.h
+index e2b4d6217f..d5c8762d04 100644
+--- a/src/compiler/backend/register-allocator.h
++++ b/src/compiler/backend/register-allocator.h
+@@ -1473,9 +1473,9 @@ class LinearScanAllocator final : public RegisterAllocator {
+ 
+   // Helper methods for allocating registers.
+   bool TryReuseSpillForPhi(TopLevelLiveRange* range);
+-  int PickRegisterThatIsAvailableLongest(
++  bool PickRegisterThatIsAvailableLongest(
+       LiveRange* current, int hint_reg,
+-      const Vector<LifetimePosition>& free_until_pos);
++      const Vector<LifetimePosition>& free_until_pos, int& reg);
+   bool TryAllocateFreeReg(LiveRange* range,
+                           const Vector<LifetimePosition>& free_until_pos);
+   bool TryAllocatePreferredReg(LiveRange* range,
+@@ -1501,6 +1501,8 @@ class LinearScanAllocator final : public RegisterAllocator {
+                          SpillMode spill_mode);
+   void SplitAndSpillIntersecting(LiveRange* range, SpillMode spill_mode);
+ 
++  int SplitRRange(LiveRange *current, const Vector <LifetimePosition> &free_until_pos);
++
+   void PrintRangeRow(std::ostream& os, const TopLevelLiveRange* toplevel);
+ 
+   void PrintRangeOverview(std::ostream& os);
+@@ -1513,11 +1515,13 @@ class LinearScanAllocator final : public RegisterAllocator {
+   // Used to avoid scanning for updates even if none are present.
+   LifetimePosition next_active_ranges_change_;
+   LifetimePosition next_inactive_ranges_change_;
++  int spill_count;
+ 
+ #ifdef DEBUG
+   LifetimePosition allocation_finger_;
+ #endif
+-};
++
++  };
+ 
+ class OperandAssigner final : public ZoneObject {
+  public:
+diff --git a/src/compiler/backend/x64/code-generator-x64.cc b/src/compiler/backend/x64/code-generator-x64.cc
+index ae553c4f69..f7a90beac9 100644
+--- a/src/compiler/backend/x64/code-generator-x64.cc
++++ b/src/compiler/backend/x64/code-generator-x64.cc
+@@ -90,7 +90,7 @@ class X64OperandConverter : public InstructionOperandConverter {
+         int32_t disp = 0;
+         return Operand(base, disp);
+       }
+-      case kMode_MRI: {
++      case kMode_MRI: { // 没有SIB的情况
+         Register base = InputRegister(NextOffset(offset));
+         int32_t disp = InputInt32(NextOffset(offset));
+         return Operand(base, disp);
+@@ -98,7 +98,7 @@ class X64OperandConverter : public InstructionOperandConverter {
+       case kMode_MR1:
+       case kMode_MR2:
+       case kMode_MR4:
+-      case kMode_MR8: {
++      case kMode_MR8: { // 有SIB
+         Register base = InputRegister(NextOffset(offset));
+         Register index = InputRegister(NextOffset(offset));
+         ScaleFactor scale = ScaleFor(kMode_MR1, mode);
+diff --git a/src/compiler/pipeline.cc b/src/compiler/pipeline.cc
+index 42560b5451..dca4715445 100644
+--- a/src/compiler/pipeline.cc
++++ b/src/compiler/pipeline.cc
+@@ -3661,6 +3661,9 @@ void PipelineImpl::AllocateRegistersForTopTier(
+         "PreAllocation", data->top_tier_register_allocation_data());
+   }
+ 
++  DEBUG_PRINT("------------------------\n");
++  DEBUG_PRINT("function: %s\n", data->debug_name());
++
+   Run<AllocateGeneralRegistersPhase<LinearScanAllocator>>();
+ 
+   if (data->sequence()->HasFPVirtualRegisters()) {
+diff --git a/test.sh b/test.sh
+new file mode 100644
+index 0000000000..6322cf5194
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,4 @@
++test/benchmarks/csuite/csuite.py -r 1000 sunspider baseline baseline_d8/x64.release/d8
++test/benchmarks/csuite/csuite.py -r 1000 sunspider compare random_d8/x64.release/d8 >> sunspider.txt
++test/benchmarks/csuite/csuite.py -r 1000 kraken baseline baseline_d8/x64.release/d8
++test/benchmarks/csuite/csuite.py -r 1000 kraken compare random_d8/x64.release/d8 >> kraken.txt
+diff --git a/test/benchmarks/csuite/sunspider-standalone-driver.js b/test/benchmarks/csuite/sunspider-standalone-driver.js
+index d9b767a267..a76b5d2eed 100644
+--- a/test/benchmarks/csuite/sunspider-standalone-driver.js
++++ b/test/benchmarks/csuite/sunspider-standalone-driver.js
+@@ -52,8 +52,10 @@ for (var j = 0; j < tests.length; j++) {
+     var startTime = new Date;
+     if (testName.indexOf('parse-only') >= 0)
+         checkSyntax(testName);
+-    else
+-        load(testName);
++    else {
++        for (var i = 0; i < 100; i++)
++            load(testName);
++    }
+     times[j] = new Date() - startTime;
+     gc();
+ }
+diff --git a/tools/dev/gm.py b/tools/dev/gm.py
+index a211a990b0..189a58a198 100755
+--- a/tools/dev/gm.py
++++ b/tools/dev/gm.py
+@@ -283,9 +283,9 @@ class Config(object):
+     # The implementation of mksnapshot failure detection relies on
+     # the "pty" module and GDB presence, so skip it on non-Linux.
+     if not USE_PTY:
+-      return _Call("autoninja -C %s %s" % (path, targets))
++      return _Call("ninja -C %s %s" % (path, targets))
+ 
+-    return_code, output = _CallWithOutput("autoninja -C %s %s" %
++    return_code, output = _CallWithOutput("ninja -C %s %s" %
+                                           (path, targets))
+     if return_code != 0 and "FAILED:" in output and "snapshot_blob" in output:
+       csa_trap = re.compile("Specify option( --csa-trap-on-node=[^ ]*)")
